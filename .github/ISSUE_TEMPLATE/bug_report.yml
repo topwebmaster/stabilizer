@@ -1,0 +1,24 @@
+name: Bug report
+description: Report a problem with Stabilizer
+body:
+  - type: textarea
+    attributes:
+      label: Problem and expected behavior
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Stabilizer version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Ubuntu, kernel and systemd versions
+      placeholder: Ubuntu 26.04, Linux 7.0, systemd 259
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Relevant evidence
+      description: Remove secrets, private process arguments and personal paths before sharing.

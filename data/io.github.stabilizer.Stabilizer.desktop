@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Stabilizer
+Comment=Memory monitoring and protection from systemd-oomd
+Comment[ru]=Мониторинг памяти и защита приложений от systemd-oomd
+Exec=stabilizer
+Icon=io.github.stabilizer.Stabilizer
+Terminal=false
+Categories=System;Monitor;GTK;
+Keywords=memory;RAM;oomd;stability;память;
+StartupNotify=true

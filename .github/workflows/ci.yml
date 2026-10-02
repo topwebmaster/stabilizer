@@ -1,0 +1,45 @@
+name: CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: "2"
+      STABILIZER_BUILD_JOBS: "2"
+      STABILIZER_CROSS_BUILD: "1"
+    steps:
+      - name: Install native dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git build-essential pkg-config libgtk-4-dev libadwaita-1-dev python3 desktop-file-utils
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+      - name: Check
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --no-default-features
+          desktop-file-validate data/io.github.stabilizer.Stabilizer.desktop
+          bash -n scripts/build-deb.sh
+      - name: Build package
+        run: ./scripts/build-deb.sh
+      - name: Inspect package
+        run: |
+          dpkg-deb --info dist/stabilizer_0.1.0_amd64.deb
+          sha256sum -c dist/stabilizer_0.1.0_amd64.deb.sha256

@@ -1,0 +1,56 @@
+Stabilizer Source-Available License 1.0 — No Resale
+SPDX-License-Identifier: LicenseRef-Stabilizer-No-Resale-1.0
+
+Copyright (c) 2026 Dmitriy Petrov (topwebmaster)
+
+1. Scope
+"Software" means the Stabilizer source code, executable programs, documentation
+and original assets supplied by the copyright holder under this license,
+including copies and modifications of that material.
+
+2. Permission
+Subject to the conditions below, you may use the Software for personal purposes
+or inside a business or other organization, study it, modify it, build it, and
+redistribute original or modified copies without charging recipients for them.
+
+3. No resale
+You may not sell copies of the Software, charge for its redistribution, grant
+paid sublicenses to it, or include original or modified copies in a paid software
+product or paid software bundle, unless you obtain separate written permission
+from the copyright holder. Renaming, repackaging, or modifying the Software does
+not remove this restriction.
+
+Charging separately for genuine support, consulting or installation work is
+permitted, provided the Software itself is supplied without charge, its free
+availability is clearly disclosed, and the service is not a disguised sale of
+copies or licenses of the Software. Voluntary donations are permitted if access
+to copies or rights granted by this license is not conditional on payment.
+
+4. Redistribution and modifications
+Redistributed copies must retain this license and the copyright notice.
+Modifications must be identified as such. The portions derived from the Software
+must remain under this license; you may not remove the no-resale condition or
+grant recipients rights that conflict with it. Recipients receive the same
+permissions directly from the copyright holder.
+
+5. Third-party software and names
+This license applies only to material owned by the copyright holder. Third-party
+dependencies retain their respective licenses; this license does not restrict
+rights granted by their copyright holders. No trademark rights or right to imply
+endorsement by the copyright holder are granted.
+
+6. Termination
+The permissions granted by this license terminate if you violate its conditions.
+Rights of downstream recipients who comply with this license are not terminated
+solely because an upstream distributor violated it.
+
+7. Disclaimer
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE
+COPYRIGHT HOLDER IS NOT LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING
+FROM THE SOFTWARE OR ITS USE.
+
+This is a source-available license with a resale restriction. It is not an
+OSI-approved open-source license. For separate permissions, contact topwebmaster
+through https://github.com/topwebmaster/stabilizer.
