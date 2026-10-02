@@ -95,6 +95,8 @@ pub struct Event {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Snapshot {
+    #[serde(default)]
+    pub locale: crate::i18n::Locale,
     pub platform: crate::platform::Platform,
     pub memory: Memory,
     pub apps: Vec<AppGroup>,
@@ -103,7 +105,9 @@ pub struct Snapshot {
     pub sampled_at: u64,
     pub error: Option<String>,
     pub engine_status: String,
+    #[serde(default)]
     pub self_protection: SelfProtection,
+    #[serde(default)]
     pub tray_online: bool,
 }
 
@@ -122,11 +126,12 @@ pub fn now() -> u64 {
 }
 
 pub fn bytes_label(bytes: u64) -> String {
-    if bytes >= 1024 * 1024 * 1024 {
+    let text = if bytes >= 1024 * 1024 * 1024 {
         format!("{:.1} ГиБ", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     } else {
         format!("{:.0} МиБ", bytes as f64 / (1024.0 * 1024.0))
-    }
+    };
+    crate::i18n::t(&text)
 }
 
 #[cfg(test)]

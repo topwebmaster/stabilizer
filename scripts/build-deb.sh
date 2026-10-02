@@ -25,6 +25,7 @@ install -Dm644 data/io.github.stabilizer.Agent.service "$stage_dir/usr/share/dbu
 install -Dm644 data/stabilizer-agent.service "$stage_dir/usr/lib/systemd/user/stabilizer-agent.service"
 install -Dm644 README.md "$stage_dir/usr/share/doc/stabilizer/README.md"
 install -Dm644 README.ru.md "$stage_dir/usr/share/doc/stabilizer/README.ru.md"
+install -Dm644 README.es.md "$stage_dir/usr/share/doc/stabilizer/README.es.md"
 install -Dm644 LICENSE "$stage_dir/usr/share/doc/stabilizer/copyright"
 install -Dm644 THIRD_PARTY_NOTICES.md "$stage_dir/usr/share/doc/stabilizer/THIRD_PARTY_NOTICES.md"
 mkdir -p "$stage_dir/usr/lib/systemd/user/default.target.wants" "$stage_dir/DEBIAN" dist

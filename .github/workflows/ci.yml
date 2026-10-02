@@ -42,4 +42,5 @@ jobs:
       - name: Inspect package
         run: |
           dpkg-deb --info dist/stabilizer_0.1.0_amd64.deb
-          sha256sum -c dist/stabilizer_0.1.0_amd64.deb.sha256
+          cd dist
+          sha256sum -c stabilizer_0.1.0_amd64.deb.sha256

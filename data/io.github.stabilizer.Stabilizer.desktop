@@ -3,6 +3,7 @@ Type=Application
 Name=Stabilizer
 Comment=Memory monitoring and protection from systemd-oomd
 Comment[ru]=Мониторинг памяти и защита приложений от systemd-oomd
+Comment[es]=Supervisión de memoria y protección de aplicaciones frente a systemd-oomd
 Exec=stabilizer
 Icon=io.github.stabilizer.Stabilizer
 Terminal=false

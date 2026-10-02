@@ -2,6 +2,7 @@
 
 ## 0.1.0 — 2026-10-02
 
+- English, Spanish and Russian with persisted runtime language switching, localized tray and messages.
 - Native GTK4/libadwaita memory monitor with an asynchronous user-session agent.
 - Persistent protected/high/normal priorities and optional soft memory limits.
 - Verified cgroup attributes, ownership/ancestor checks and reversible policies.

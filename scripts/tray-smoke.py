@@ -59,7 +59,12 @@ def main():
         menu_path = json.loads(run('busctl', '--user', '--json=short', 'get-property', tray_bus, '/StatusNotifierItem', 'org.kde.StatusNotifierItem', 'Menu'))['data']
         menu = json.loads(run('busctl', '--user', '--json=short', 'call', tray_bus, menu_path, 'com.canonical.dbusmenu', 'GetLayout', 'iias', '0', '1', '0'))
         text = json.dumps(menu, ensure_ascii=False)
-        for expected in ['Доступно RAM', 'Занято RAM', 'Swap', 'Давление памяти', 'Защищено групп', 'Открыть Stabilizer']:
+        expected_by_locale = {
+            'ru': ['Доступно RAM', 'Занято RAM', 'Swap', 'Давление памяти', 'Защищено групп', 'Открыть Stabilizer'],
+            'en': ['Available RAM', 'RAM in use', 'Swap', 'Memory pressure', 'Protected groups', 'Open Stabilizer'],
+            'es': ['RAM disponible', 'RAM en uso', 'Swap', 'Presión de memoria', 'Grupos protegidos', 'Abrir Stabilizer'],
+        }
+        for expected in expected_by_locale[first['locale']]:
             assert expected in text, expected
         (state / 'tray-menu.json').write_text(json.dumps(menu, ensure_ascii=False, indent=2))
         print('PASS: native tray registered; click menu exposes live memory and protection data')

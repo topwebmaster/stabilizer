@@ -21,7 +21,7 @@ pub struct TrayView {
 
 impl TrayView {
     pub fn from_snapshot(snapshot: &Snapshot) -> Self {
-        Self {
+        let mut view = Self {
             available: format!("Доступно RAM: {}", bytes_label(snapshot.memory.available)),
             used: format!(
                 "Занято RAM: {} / {}",
@@ -54,7 +54,14 @@ impl TrayView {
                     &snapshot.self_protection.detail
                 }
             ),
-        }
+        };
+        view.available = crate::i18n::t(&view.available);
+        view.used = crate::i18n::t(&view.used);
+        view.swap = crate::i18n::t(&view.swap);
+        view.pressure = crate::i18n::t(&view.pressure);
+        view.protected = crate::i18n::t(&view.protected);
+        view.self_protection = crate::i18n::t(&view.self_protection);
+        view
     }
 }
 
@@ -122,7 +129,7 @@ impl Tray for MemoryTray {
         let info = |text: &str| {
             StandardItem {
                 label: if text.is_empty() {
-                    "Подключение…".into()
+                    crate::i18n::t("Подключение…")
                 } else {
                     text.into()
                 },
@@ -141,7 +148,7 @@ impl Tray for MemoryTray {
             info(&self.view.self_protection),
             MenuItem::Separator,
             StandardItem {
-                label: "Открыть Stabilizer".into(),
+                label: crate::i18n::t("Открыть Stabilizer"),
                 icon_name: "view-grid-symbolic".into(),
                 activate: Box::new(|tray: &mut Self| {
                     let _ = tray.sender.try_send(Command::OpenGui);
@@ -163,13 +170,17 @@ impl Tray for MemoryTray {
     }
 }
 
-pub fn open_gui() -> anyhow::Result<()> {
+pub async fn open_gui() -> anyhow::Result<()> {
     let path = std::env::current_exe()?.with_file_name("stabilizer");
-    std::process::Command::new(path)
+    let mut child = tokio::process::Command::new(path)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()?;
+    // Reap short-lived secondary launches as well as the main window without blocking the agent.
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
     Ok(())
 }
 
@@ -181,6 +192,6 @@ mod tests {
         let snapshot = Snapshot::default();
         let view = TrayView::from_snapshot(&snapshot);
         assert!(!view.self_protection.contains("защищён"));
-        assert_eq!(view.protected, "Защищено групп: 0");
+        assert_eq!(view.protected, crate::i18n::t("Защищено групп: 0"));
     }
 }

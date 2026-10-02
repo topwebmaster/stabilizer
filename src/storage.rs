@@ -14,6 +14,8 @@ use std::{
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Store {
     pub version: u32,
+    #[serde(default)]
+    pub locale: crate::i18n::Locale,
     pub rules: Vec<Rule>,
     pub applied: Vec<Applied>,
     pub events: Vec<Event>,

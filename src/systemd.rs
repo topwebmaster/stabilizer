@@ -232,6 +232,12 @@ pub async fn self_protection(
             "Агент запущен без собственной службы"
         );
         let live = live(conn, &unit).await?;
+        let own_group = AppGroup {
+            unit: unit.clone(),
+            cgroup: live.cgroup.clone(),
+            ..Default::default()
+        };
+        target_is_safe(&own_group, &live, uid)?;
         verify_kernel_settings(&live.cgroup, &live.preference, live.high)?;
         let path = unit_path(conn, &unit).await?;
         let service = Proxy::new(

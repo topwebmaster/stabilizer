@@ -6,12 +6,13 @@ Built with Rust, GTK4 and libadwaita. A small user-session agent keeps policies 
 while the main window is closed. No Electron, WebView, root daemon, telemetry or
 independent process killer.
 
-[Русский](README.ru.md) · [License](LICENSE) · [Contributing](CONTRIBUTING.md)
+[Русский](README.ru.md) · [Español](README.es.md) · [License](LICENSE) · [Contributing](CONTRIBUTING.md)
 
 ![Stabilizer native interface](assets/stabilizer.png)
 
 ## Features
 
+- English, Spanish and Russian UI, tray and status messages; persistent language selection.
 - Live RAM, available memory, swap and memory-pressure (PSI) statistics.
 - Per-application cgroup accounting including child processes.
 - Persistent priorities: **Protected**, **High**, **Normal**.
@@ -32,7 +33,7 @@ sha256sum -c stabilizer_0.1.0_amd64.deb.sha256
 sudo apt install ./stabilizer_0.1.0_amd64.deb
 ```
 
-Open **Stabilizer** in the applications menu. The background agent starts through
+Open **Stabilizer** in the applications menu. Select **English**, **Español** or **Русский** in the header to change the interface and tray language. The initial language follows the system locale, falling back to English. The background agent starts through
 D-Bus activation; it is also configured to start at the next login. Closing the
 window frees GUI resources while the tray and policies remain active.
 
@@ -99,9 +100,10 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --no-default-features
 python3 scripts/live-smoke.py --release
 python3 scripts/tray-smoke.py
+python3 scripts/language-smoke.py
 ```
 
-The two live smoke scripts require a real Ubuntu user session and no running
+The live smoke scripts require a real Ubuntu user session and no running
 Stabilizer agent. They operate on dedicated temporary services only. They never
 fill the host RAM or change GNOME/D-Bus policies. CI compiles and tests inside an
 Ubuntu 26.04 container; it does not claim to validate a real GNOME session or OOM

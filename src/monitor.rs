@@ -3,7 +3,8 @@ use anyhow::{Context, Result};
 use std::{collections::BTreeMap, fs, path::Path};
 
 fn display_name(fallback: &str) -> String {
-    static NAMES: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
+    static NAMES: std::sync::OnceLock<BTreeMap<String, BTreeMap<String, String>>> =
+        std::sync::OnceLock::new();
     let names = NAMES.get_or_init(|| {
         let mut names = BTreeMap::new();
         let mut directories = vec![
@@ -41,8 +42,14 @@ fn display_name(fallback: &str) -> String {
                     .next()
                     .unwrap_or("");
                 let field = |key| section.lines().find_map(|s| s.strip_prefix(key));
-                if let Some(name) = field("Name[ru]=").or_else(|| field("Name=")) {
-                    names.insert(id.to_string(), name.to_string());
+                let mut localized = BTreeMap::new();
+                for (locale, key) in [("en", "Name="), ("ru", "Name[ru]="), ("es", "Name[es]=")] {
+                    if let Some(name) = field(key) {
+                        localized.insert(locale.to_string(), name.to_string());
+                    }
+                }
+                if !localized.is_empty() {
+                    names.insert(id.to_string(), localized);
                 }
             }
         }
@@ -57,6 +64,11 @@ fn display_name(fallback: &str) -> String {
                 .iter()
                 .find(|(id, _)| id.starts_with(&format!("{fallback}-")))
                 .map(|(_, name)| name)
+        })
+        .and_then(|names| {
+            names
+                .get(crate::i18n::locale().code())
+                .or_else(|| names.get("en"))
         })
         .cloned()
         .unwrap_or_else(|| fallback.to_string())

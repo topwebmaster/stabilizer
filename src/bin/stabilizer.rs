@@ -6,15 +6,21 @@ use stabilizer::{
 };
 use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc, sync::mpsc, time::Duration};
 
+use stabilizer::i18n::{self, Locale, t};
+
+thread_local! { static GUI_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) }; }
+
 enum Request {
     Set(Rule),
     Remove(String),
     Protect,
+    Locale(Locale),
 }
 enum Update {
     Snapshot(Box<Snapshot>),
     Error(String),
     Done,
+    LocaleChanged,
 }
 
 fn worker(tx: mpsc::Sender<Update>, rx: mpsc::Receiver<Request>) {
@@ -29,6 +35,7 @@ fn worker(tx: mpsc::Sender<Update>, rx: mpsc::Receiver<Request>) {
                 Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
             };
             if let Some(request) = request {
+                let changing_locale = matches!(request, Request::Locale(_));
                 let outcome = match request {
                     Request::Set(rule) => serde_json::to_string(&rule)
                         .map_err(anyhow::Error::from)
@@ -40,26 +47,46 @@ fn worker(tx: mpsc::Sender<Update>, rx: mpsc::Receiver<Request>) {
                     Request::Remove(key) => proxy
                         .call::<_, _, ()>("RemoveRule", &(key,))
                         .map_err(Into::into),
+                    Request::Locale(locale) => proxy
+                        .call::<_, _, ()>("SetLocale", &(locale.code(),))
+                        .map_err(Into::into),
                     Request::Protect => proxy
                         .call::<_, _, ()>("ProtectSession", &())
                         .map_err(Into::into),
                 };
                 let _ = tx.send(match outcome {
+                    Ok(()) if changing_locale => Update::LocaleChanged,
                     Ok(()) => Update::Done,
                     Err(e) => Update::Error(e.to_string()),
                 });
             }
-            match proxy.call::<_, _, String>("Snapshot", &()) {
-                Ok(json) => match serde_json::from_str(&json) {
-                    Ok(snapshot) => {
-                        if tx.send(Update::Snapshot(Box::new(snapshot))).is_err() {
-                            return Ok(());
+            let response = if started {
+                proxy
+                    .call_with_flags::<_, _, String>(
+                        "Snapshot",
+                        zbus::proxy::MethodFlags::NoAutoStart.into(),
+                        &(),
+                    )
+                    .and_then(|reply| {
+                        reply.ok_or_else(|| zbus::Error::Failure("Missing reply".into()))
+                    })
+            } else {
+                proxy.call::<_, _, String>("Snapshot", &())
+            };
+            match response {
+                Ok(json) => {
+                    started = true;
+                    match serde_json::from_str(&json) {
+                        Ok(snapshot) => {
+                            if tx.send(Update::Snapshot(Box::new(snapshot))).is_err() {
+                                return Ok(());
+                            }
+                        }
+                        Err(e) => {
+                            let _ = tx.send(Update::Error(format!("Ошибка ответа агента: {e}")));
                         }
                     }
-                    Err(e) => {
-                        let _ = tx.send(Update::Error(format!("Ошибка ответа агента: {e}")));
-                    }
-                },
+                }
                 Err(e) => {
                     if !started {
                         started = true;
@@ -112,7 +139,7 @@ struct Row {
 }
 
 fn label(text: &str, style: &str) -> gtk::Label {
-    let label = gtk::Label::new(Some(text));
+    let label = gtk::Label::new(Some(&t(text)));
     label.set_xalign(0.0);
     if !style.is_empty() {
         label.add_css_class(style);
@@ -121,9 +148,15 @@ fn label(text: &str, style: &str) -> gtk::Label {
 }
 
 fn set_text_if_changed(label: &gtk::Label, text: &str) {
+    let text = t(text);
     if label.text().as_str() != text {
-        label.set_text(text);
+        label.set_text(&text);
     }
+}
+
+fn localized_dropdown(strings: &[&str]) -> gtk::DropDown {
+    let labels: Vec<String> = strings.iter().map(|s| t(s)).collect();
+    gtk::DropDown::from_strings(&labels.iter().map(String::as_str).collect::<Vec<_>>())
 }
 
 fn metric(title: &str) -> (gtk::Box, gtk::Label) {
@@ -131,7 +164,9 @@ fn metric(title: &str) -> (gtk::Box, gtk::Label) {
     box_.add_css_class("card");
     box_.add_css_class("metric");
     box_.set_hexpand(true);
-    box_.append(&label(title, "dim-label"));
+    let heading = label(title, "dim-label");
+    heading.set_wrap(true);
+    box_.append(&heading);
     let value = label("—", "title-2");
     box_.append(&value);
     (box_, value)
@@ -145,7 +180,7 @@ fn edit_rule(
     sender: mpsc::Sender<Request>,
 ) {
     let dialog = adw::Dialog::builder()
-        .title("Правило приложения")
+        .title(t("Правило приложения"))
         .content_width(480)
         .build();
     let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -163,21 +198,23 @@ fn edit_rule(
     explanation.set_wrap(true);
     body.append(&explanation);
     let group = adw::PreferencesGroup::new();
-    let dropdown = gtk::DropDown::from_strings(&["Защищённое", "Высокий приоритет", "Обычное"]);
+    let dropdown = localized_dropdown(&["Защищённое", "Высокий приоритет", "Обычное"]);
     dropdown.set_selected(match rule.priority {
         Priority::Protected => 0,
         Priority::High => 1,
         Priority::Normal => 2,
     });
-    let priority_row = adw::ActionRow::builder().title("Приоритет памяти").build();
+    let priority_row = adw::ActionRow::builder()
+        .title(t("Приоритет памяти"))
+        .build();
     priority_row.add_suffix(&dropdown);
     group.add(&priority_row);
     let limit = gtk::SpinButton::with_range(0.0, 1_048_576.0, 128.0);
     limit.set_value(rule.memory_high_mib.unwrap_or(0) as f64);
     limit.set_sensitive(rule.priority != Priority::Protected);
     let limit_row = adw::ActionRow::builder()
-        .title("Мягкий лимит RAM, МиБ")
-        .subtitle("0 — исходный лимит приложения")
+        .title(t("Мягкий лимит RAM, МиБ"))
+        .subtitle(t("0 — исходный лимит приложения"))
         .build();
     limit_row.add_suffix(&limit);
     group.add(&limit_row);
@@ -197,7 +234,7 @@ fn edit_rule(
     });
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     if existing {
-        let remove = gtk::Button::with_label("Удалить правило");
+        let remove = gtk::Button::with_label(&t("Удалить правило"));
         remove.add_css_class("destructive-action");
         let key = rule.key.clone();
         let s = sender.clone();
@@ -211,7 +248,7 @@ fn edit_rule(
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
     actions.append(&spacer);
-    let save = gtk::Button::with_label("Сохранить");
+    let save = gtk::Button::with_label(&t("Сохранить"));
     save.add_css_class("suggested-action");
     let d = dialog.clone();
     let toast = overlay.clone();
@@ -284,7 +321,7 @@ fn make_row(
     content.append(&memory);
     let edit = gtk::Button::from_icon_name("emblem-system-symbolic");
     edit.add_css_class("flat");
-    edit.set_tooltip_text(Some("Настроить правило"));
+    edit.set_tooltip_text(Some(&t("Настроить правило")));
     edit.set_sensitive(!demo && state.borrow().platform.supported);
     let app_clone = app.clone();
     let window = window.clone();
@@ -316,6 +353,7 @@ fn make_row(
 
 fn demo_snapshot() -> Snapshot {
     let mut snapshot = Snapshot {
+        locale: i18n::locale(),
         platform: stabilizer::platform::Platform {
             os: "Ubuntu 26.04".into(),
             kernel: "7.0.0".into(),
@@ -387,19 +425,30 @@ fn demo_snapshot() -> Snapshot {
 }
 
 fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathBuf>) {
-    let css = gtk::CssProvider::new();
-    css.load_from_string(".metric { padding: 18px; } .badge { font-size: 12px; padding: 5px 10px; border-radius: 8px; background: alpha(@accent_color, 0.10); } .protected { color: @success_color; } .page { padding: 20px; } .error-status { color: @error_color; }");
-    gtk::style_context_add_provider_for_display(
-        &gtk::gdk::Display::default().expect("GTK display"),
-        &css,
-        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
-    let window = adw::ApplicationWindow::builder()
-        .application(application)
-        .title("Stabilizer")
-        .default_width(1060)
-        .default_height(780)
-        .build();
+    let generation = GUI_GENERATION.with(|value| {
+        value.set(value.get() + 1);
+        value.get()
+    });
+    if generation == 1 {
+        let css = gtk::CssProvider::new();
+        css.load_from_string(".metric { padding: 18px; } .badge { font-size: 12px; padding: 5px 10px; border-radius: 8px; background: alpha(@accent_color, 0.10); } .protected { color: @success_color; } .page { padding: 20px; } .error-status { color: @error_color; }");
+        gtk::style_context_add_provider_for_display(
+            &gtk::gdk::Display::default().expect("GTK display"),
+            &css,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+    let window = application
+        .active_window()
+        .and_then(|window| window.downcast::<adw::ApplicationWindow>().ok())
+        .unwrap_or_else(|| {
+            adw::ApplicationWindow::builder()
+                .application(application)
+                .title("Stabilizer")
+                .default_width(1060)
+                .default_height(780)
+                .build()
+        });
     let state = Rc::new(RefCell::new(Snapshot::default()));
     let rows: Rc<RefCell<HashMap<String, Row>>> = Rc::new(RefCell::new(HashMap::new()));
     let (sender, requests) = mpsc::channel();
@@ -411,14 +460,37 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
     }
     let layout = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let header = adw::HeaderBar::new();
-    let title = adw::WindowTitle::new("Stabilizer", "Память под вашим контролем");
+    let language = gtk::DropDown::from_strings(&["English", "Español", "Русский"]);
+    language.set_selected(match i18n::locale() {
+        Locale::En => 0,
+        Locale::Es => 1,
+        Locale::Ru => 2,
+    });
+    language.set_tooltip_text(Some(&t("Язык")));
+    let language_sender = sender.clone();
+    let language_app = application.clone();
+    language.connect_selected_notify(move |dropdown| {
+        let locale = match dropdown.selected() {
+            1 => Locale::Es,
+            2 => Locale::Ru,
+            _ => Locale::En,
+        };
+        if demo {
+            i18n::set_locale(locale);
+            build_ui(&language_app, true, None);
+        } else {
+            let _ = language_sender.send(Request::Locale(locale));
+        }
+    });
+    header.pack_end(&language);
+    let title = adw::WindowTitle::new("Stabilizer", &t("Память под вашим контролем"));
     header.set_title_widget(Some(&title));
     let about = gtk::Button::from_icon_name("help-about-symbolic");
-    about.set_tooltip_text(Some("О приложении"));
+    about.set_tooltip_text(Some(&t("О приложении")));
     let parent = window.clone();
     about.connect_clicked(move |_| {
         let dialog = adw::AboutDialog::builder().application_name("Stabilizer").application_icon("io.github.stabilizer.Stabilizer").version(env!("CARGO_PKG_VERSION"))
-            .comments("Монитор памяти и правил systemd-oomd. Ubuntu 26.04 · Linux ≥ 7.0. Защита относится к oomd, а не ко всем причинам завершения процесса.")
+            .comments(t("Монитор памяти и правил systemd-oomd. Ubuntu 26.04 · Linux ≥ 7.0. Защита относится к oomd, а не ко всем причинам завершения процесса."))
             .license_type(gtk::License::Custom).license(include_str!("../../LICENSE"))
             .copyright("© 2026 Dmitriy Petrov (topwebmaster)").website("https://github.com/topwebmaster/stabilizer")
             .build(); dialog.present(Some(&parent));
@@ -446,10 +518,12 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
     status.set_wrap(true);
     status.set_hexpand(true);
     policy.append(&status);
-    let protect = gtk::Button::with_label("Защитить сеанс");
+    let protect = gtk::Button::with_label(&t("Защитить сеанс"));
     protect.set_sensitive(false);
     protect.add_css_class("suggested-action");
-    protect.set_tooltip_text(Some("Сохранить защиту D-Bus и GNOME Shell от systemd-oomd"));
+    protect.set_tooltip_text(Some(&t(
+        "Сохранить защиту D-Bus и GNOME Shell от systemd-oomd",
+    )));
     let send = sender.clone();
     protect.connect_clicked(move |b| {
         b.set_sensitive(false);
@@ -465,7 +539,7 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
     body.append(&switcher);
     let monitor_page = gtk::Box::new(gtk::Orientation::Vertical, 12);
     let search = gtk::SearchEntry::new();
-    search.set_placeholder_text(Some("Найти приложение или службу"));
+    search.set_placeholder_text(Some(&t("Найти приложение или службу")));
     monitor_page.append(&search);
     let list = gtk::ListBox::new();
     list.add_css_class("boxed-list");
@@ -482,7 +556,7 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
     );
     note.set_wrap(true);
     monitor_page.append(&note);
-    stack.add_titled(&monitor_page, Some("monitor"), "Приложения");
+    stack.add_titled(&monitor_page, Some("monitor"), &t("Приложения"));
     let rules_list = gtk::ListBox::new();
     rules_list.add_css_class("boxed-list");
     rules_list.set_selection_mode(gtk::SelectionMode::None);
@@ -490,7 +564,7 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
         .hscrollbar_policy(gtk::PolicyType::Never)
         .child(&rules_list)
         .build();
-    stack.add_titled(&rules_page, Some("rules"), "Правила");
+    stack.add_titled(&rules_page, Some("rules"), &t("Правила"));
     let events = gtk::TextView::new();
     events.set_editable(false);
     events.set_cursor_visible(false);
@@ -499,7 +573,7 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
     events.set_left_margin(12);
     events.set_right_margin(12);
     let events_page = gtk::ScrolledWindow::builder().child(&events).build();
-    stack.add_titled(&events_page, Some("events"), "Журнал");
+    stack.add_titled(&events_page, Some("events"), &t("Журнал"));
     body.append(&stack);
     let footer = label(
         "Ubuntu 26.04 · Linux ≥ 7.0 · защита от systemd-oomd",
@@ -521,20 +595,36 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
     });
     let last_rules = Rc::new(RefCell::new(String::new()));
     let mut captured = false;
+    let mut last_error = String::new();
     let mut last_events = String::new();
     let app = application.clone();
     let win = window.clone();
     glib::timeout_add_local(Duration::from_millis(150), move || {
+        if GUI_GENERATION.with(|value| value.get()) != generation {
+            return glib::ControlFlow::Break;
+        }
         for update in receiver.try_iter() {
             match update {
                 Update::Error(error) => {
                     set_text_if_changed(&status, &error);
-                    overlay.add_toast(adw::Toast::new(&error));
+                    if last_error != error {
+                        overlay.add_toast(adw::Toast::new(&t(&error)));
+                        last_error = error;
+                    }
+                    protect.set_sensitive(false);
+                    set_text_if_changed(&footer, "Самозащита не подтверждена");
                 }
-                Update::Done => overlay.add_toast(adw::Toast::new(
+                Update::LocaleChanged => {}
+                Update::Done => overlay.add_toast(adw::Toast::new(&t(
                     "Правила сохранены. Результат применения показан в списке.",
-                )),
+                ))),
                 Update::Snapshot(snapshot) => {
+                    last_error.clear();
+                    if !demo && snapshot.sampled_at > 0 && snapshot.locale != i18n::locale() {
+                        i18n::set_locale(snapshot.locale);
+                        build_ui(&app, false, screenshot.clone());
+                        return glib::ControlFlow::Break;
+                    }
                     if let Some(error) = &snapshot.error {
                         set_text_if_changed(&status, error);
                     } else if !snapshot.platform.supported {
@@ -565,7 +655,7 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
                         &psi,
                         &format!("{:.1}%", snapshot.memory.pressure_full_avg10),
                     );
-                    psi.set_tooltip_text(Some("PSI full: доля времени, когда все выполняемые задачи ожидали память. Это не процент занятой RAM."));
+                    psi.set_tooltip_text(Some(&t("PSI full: доля времени, когда все выполняемые задачи ожидали память. Это не процент занятой RAM.")));
                     if snapshot.memory.total > 0 {
                         progress.set_fraction(
                             1.0 - snapshot.memory.available as f64 / snapshot.memory.total as f64,
@@ -644,7 +734,7 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
                         }
                         if snapshot.rules.is_empty() {
                             let empty = adw::ActionRow::builder()
-                                .title("Правил пока нет")
+                                .title(t("Правил пока нет"))
                                 .subtitle(
                                     "Откройте настройки приложения или нажмите «Защитить сеанс».",
                                 )
@@ -653,14 +743,14 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
                         }
                         for rule in &snapshot.rules {
                             let row = adw::ActionRow::builder()
-                                .title(&rule.label)
-                                .subtitle(format!(
+                                .title(t(&rule.label))
+                                .subtitle(t(&format!(
                                     "{} · {}",
                                     rule.priority.label(),
                                     rule.memory_high_mib
                                         .map(|m| format!("лимит {m} МиБ"))
                                         .unwrap_or("без нового лимита".into())
-                                ))
+                                )))
                                 .build();
                             let edit = gtk::Button::from_icon_name("emblem-system-symbolic");
                             edit.set_valign(gtk::Align::Center);
@@ -696,7 +786,7 @@ fn build_ui(application: &adw::Application, demo: bool, screenshot: Option<PathB
                         &lines
                     };
                     if last_events != event_text {
-                        events.buffer().set_text(event_text);
+                        events.buffer().set_text(&t(event_text));
                         last_events = event_text.to_string();
                     }
                     if !captured
@@ -737,6 +827,22 @@ fn main() -> glib::ExitCode {
             "stabilizer [--demo] [--screenshot /absolute/path.png]\nНативный монитор памяти и управление правилами systemd-oomd."
         );
         return glib::ExitCode::SUCCESS;
+    }
+    let stored = stabilizer::storage::path()
+        .ok()
+        .and_then(|path| stabilizer::storage::load(&path).ok())
+        .map(|store| store.locale)
+        .unwrap_or_else(Locale::system);
+    let chosen = args
+        .iter()
+        .position(|s| s == "--lang")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| Locale::parse(s))
+        .unwrap_or(stored);
+    i18n::set_locale(chosen);
+    // No worker threads or GTK objects exist yet; initialize gettext's process language once.
+    unsafe {
+        std::env::set_var("LANGUAGE", format!("{}:en", chosen.code()));
     }
     let demo = args.iter().any(|s| s == "--demo");
     let screenshot = args

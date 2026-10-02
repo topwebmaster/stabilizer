@@ -14,6 +14,7 @@ pub(crate) enum Command {
     Remove(String, oneshot::Sender<Result<()>>),
     ProtectSession(oneshot::Sender<Result<()>>),
     OpenGui,
+    Locale(crate::i18n::Locale, oneshot::Sender<Result<()>>),
 }
 
 struct Interface {
@@ -22,23 +23,36 @@ struct Interface {
 }
 
 fn dbus_error(e: impl std::fmt::Display) -> fdo::Error {
-    fdo::Error::Failed(e.to_string())
+    fdo::Error::Failed(crate::i18n::t(&e.to_string()))
 }
 
 #[zbus::interface(name = "io.github.stabilizer.Agent1")]
 impl Interface {
+    async fn set_locale(&self, code: &str) -> fdo::Result<()> {
+        let locale = crate::i18n::Locale::parse(code).ok_or_else(|| {
+            fdo::Error::InvalidArgs(crate::i18n::t("Поддерживаемые языки: en, es, ru"))
+        })?;
+        let (tx, rx) = oneshot::channel();
+        self.commands
+            .send(Command::Locale(locale, tx))
+            .await
+            .map_err(dbus_error)?;
+        rx.await.map_err(dbus_error)?.map_err(dbus_error)
+    }
     async fn snapshot(&self) -> fdo::Result<String> {
         serde_json::to_string(&*self.snapshot.read().await).map_err(dbus_error)
     }
 
     async fn set_rule(&self, json: &str) -> fdo::Result<()> {
         if json.len() > 4096 {
-            return Err(fdo::Error::InvalidArgs("Правило слишком большое".into()));
+            return Err(fdo::Error::InvalidArgs(crate::i18n::t(
+                "Правило слишком большое",
+            )));
         }
-        let rule: Rule =
-            serde_json::from_str(json).map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+        let rule: Rule = serde_json::from_str(json)
+            .map_err(|e| fdo::Error::InvalidArgs(crate::i18n::t(&e.to_string())))?;
         rule.validate()
-            .map_err(|e| fdo::Error::InvalidArgs(e.to_string()))?;
+            .map_err(|e| fdo::Error::InvalidArgs(crate::i18n::t(&e.to_string())))?;
         let (tx, rx) = oneshot::channel();
         self.commands
             .send(Command::Set(rule, tx))
@@ -140,6 +154,7 @@ impl Engine {
         let uid = self.uid;
         let mut sample =
             tokio::task::spawn_blocking(move || crate::monitor::collect(uid)).await??;
+        sample.locale = self.store.locale;
         sample.platform = self.platform.clone();
         let coverage = systemd::coverage(&self.system, uid).await;
         sample.engine_status = coverage.message.clone();
@@ -168,7 +183,20 @@ impl Engine {
             self.persist().await?;
         }
         sample.rules = self.store.rules.clone();
+        for rule in &mut sample.rules {
+            rule.label = crate::i18n::t(&rule.label);
+        }
         sample.events = self.store.events.iter().rev().take(30).cloned().collect();
+        sample.platform.reason = crate::i18n::t(&sample.platform.reason);
+        sample.engine_status = crate::i18n::t(&sample.engine_status);
+        sample.self_protection.detail = crate::i18n::t(&sample.self_protection.detail);
+        for app in &mut sample.apps {
+            app.label = crate::i18n::t(&app.label);
+            app.status = crate::i18n::t(&app.status);
+        }
+        for event in &mut sample.events {
+            event.message = crate::i18n::t(&event.message);
+        }
         if let Some(tray) = &self.tray {
             let view = crate::tray::TrayView::from_snapshot(&sample);
             tray.update(move |tray| tray.view = view).await;
@@ -261,6 +289,7 @@ pub async fn run() -> Result<()> {
     );
     let path = storage::path()?;
     let store = storage::load(&path)?;
+    crate::i18n::set_locale(store.locale);
     let platform = crate::platform::detect();
     let snapshot = Arc::new(RwLock::new(Snapshot {
         platform: platform.clone(),
@@ -337,10 +366,17 @@ pub async fn run() -> Result<()> {
             }
             Some(command) = receiver.recv() => {
                 if matches!(command, Command::OpenGui) {
-                    if let Err(e) = crate::tray::open_gui() { eprintln!("Не удалось открыть окно: {e}"); }
+                    if let Err(e) = crate::tray::open_gui().await { eprintln!("Не удалось открыть окно: {e}"); }
                     continue;
                 }
                 let (result, reply) = match command {
+                    Command::Locale(locale, tx) => {
+                        let old = engine.store.locale;
+                        engine.store.locale = locale;
+                        let result = engine.persist().await;
+                        if result.is_ok() { crate::i18n::set_locale(locale); } else { engine.store.locale = old; }
+                        (result, tx)
+                    },
                     Command::Set(rule, tx) => (engine.set_rule(rule).await, tx),
                     Command::Remove(key, tx) => (engine.remove_rule(&key).await, tx),
                     Command::ProtectSession(tx) => {

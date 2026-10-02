@@ -13,3 +13,5 @@
 - The agent owns the SNI tray; closing the GUI must not stop policies or the tray. Use a dedicated user unit with `ManagedOOMPreference=omit` and `Restart=always` for self-protection; preserve intentional owner stop/uninstall.
 - License is source-available with no resale. Do not describe it as OSI-approved Open Source or replace it with MIT/GPL without explicit owner authorization. Preserve third-party notices.
 - Keep intermediate files in `work/`, packages in `dist/`; both are ignored by Git.
+
+- Keep English, Spanish and Russian catalogs in sync, including placeholder order. Locale changes must not change application/rule identities. Test language persistence and GUI refresh with `scripts/language-smoke.py`.
