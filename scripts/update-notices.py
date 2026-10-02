@@ -35,7 +35,7 @@ def main():
         path = pathlib.Path('/usr/share/common-licenses') / name
         if path.exists():
             parts.append(f'\n## Common license referenced above: {name}\n\n```text\n{path.read_text().rstrip()}\n```\n')
-    (ROOT / 'THIRD_PARTY_NOTICES.md').write_text(''.join(parts))
+    (ROOT / 'THIRD_PARTY_NOTICES.md').write_text('\n'.join(line.rstrip() for line in ''.join(parts).splitlines()) + '\n')
     print(f'Collected notices for {len(packages)} locked dependencies')
 
 
